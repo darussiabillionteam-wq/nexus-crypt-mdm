@@ -781,49 +781,200 @@ const LogsScreen = () => {
 };
 
 const ConfigScreen = () => {
-  const [config, setConfig] = useState(null);
+  const [config, setConfig] = useState({
+    apnsCert: '', apnsKey: '', mdmCert: '', mdmKey: '',
+    teamId: '', keyId: '', bundleId: '', mdmTopic: '',
+    appleId: '', orgName: 'Nexus Crypt Soluções de Segurança',
+    department: 'Gerenciamento de Risco e TI', supportEmail: '',
+    isConfigured: false,
+  });
   const [statusMsg, setStatusMsg] = useState('');
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
 
   useEffect(() => {
     apiGetAppleConfig()
-      .then(setConfig)
-      .catch((err) => setStatusMsg('Erro ao carregar: ' + err.message))
+      .then((data) => setConfig((prev) => ({ ...prev, ...data })))
+      .catch((err) => setStatusMsg('❌ Erro ao carregar: ' + err.message))
       .finally(() => setLoading(false));
   }, []);
 
+  const updateField = (key, value) => {
+    setConfig((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleFileUpload = (key, e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      updateField(key, ev.target.result);
+      setStatusMsg(`Arquivo "${file.name}" carregado (${(file.size / 1024).toFixed(1)} KB)`);
+    };
+    reader.readAsText(file);
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    setStatusMsg('Salvando configurações...');
+    try {
+      const updated = await apiUpdateAppleConfig(config);
+      setConfig((prev) => ({ ...prev, ...updated }));
+      setStatusMsg(updated.isConfigured
+        ? '✅ Configurações salvas. Sistema PRONTO para MDM real.'
+        : '⚠️ Configurações salvas. Ainda faltam certificados para ativar o MDM real.');
+    } catch (err) {
+      setStatusMsg('❌ Erro ao salvar: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleTestAPNS = async () => {
-    setStatusMsg('Testando APNS...');
+    setTesting(true);
+    setStatusMsg('Testando conexão com APNS...');
     try {
       const result = await apiTestAPNS();
       setStatusMsg(result.success ? '✅ ' + result.message : '❌ ' + result.error);
     } catch (err) {
       setStatusMsg('❌ ' + err.message);
+    } finally {
+      setTesting(false);
     }
   };
 
   if (loading) return <div className="text-white p-8">Carregando configurações...</div>;
-  if (!config) return <div className="text-red-400 p-8">Erro ao carregar.</div>;
+
+  const isConfigured = config.isConfigured || (
+    config.apnsCert && config.apnsKey && config.mdmCert && config.mdmKey &&
+    config.teamId && config.keyId && config.bundleId && config.mdmTopic
+  );
 
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 max-w-5xl">
-      <div>
-        <h2 className="text-2xl font-bold text-white">Configurações MDM</h2>
-        <p className="text-[#B0B0B0] text-sm mt-1">Certificados e parâmetros Apple.</p>
+      <div className="flex justify-between items-start">
+        <div>
+          <h2 className="text-2xl font-bold text-white">Configurações do Servidor MDM</h2>
+          <p className="text-[#B0B0B0] text-sm mt-1">Gerenciamento de certificados Apple, APNS e parâmetros empresariais.</p>
+        </div>
+        <div className={`px-4 py-2 rounded-full text-xs font-bold tracking-wider border ${
+          isConfigured
+            ? 'bg-green-500/10 text-green-400 border-green-500/40'
+            : 'bg-orange-500/10 text-orange-400 border-orange-500/40'
+        }`}>
+          {isConfigured ? '● MDM PRONTO' : '● AGUARDANDO CERTIFICADOS'}
+        </div>
       </div>
 
-      {statusMsg && <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/30 text-blue-400 text-sm">{statusMsg}</div>}
+      {statusMsg && (
+        <div className={`p-4 rounded-lg border text-sm font-medium ${
+          statusMsg.includes('✅') ? 'bg-green-500/10 border-green-500/30 text-green-400' :
+          statusMsg.includes('❌') ? 'bg-red-500/10 border-red-500/30 text-red-400' :
+          statusMsg.includes('⚠️') ? 'bg-orange-500/10 border-orange-500/30 text-orange-400' :
+          'bg-blue-500/10 border-blue-500/30 text-blue-400'
+        }`}>
+          {statusMsg}
+        </div>
+      )}
+
+      <Card className="border-t-4 border-t-green-500">
+        <h3 className="text-lg font-semibold text-white mb-2 flex items-center gap-2">
+          <ShieldCheck className="text-green-500" size={20} /> Certificados Apple (APNS)
+        </h3>
+        <p className="text-xs text-gray-400 mb-6">Faça upload dos certificados gerados no Apple Developer Portal.</p>
+
+        <div className="space-y-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm text-[#B0B0B0] font-medium">Certificado APNS (.pem)</label>
+              <input
+                type="file"
+                accept=".pem,.p12,.cer"
+                onChange={(e) => handleFileUpload('apnsCert', e)}
+                className="flex-1 bg-[#1E1E1E] border border-gray-700 text-white rounded-lg px-3 py-2 text-sm file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:bg-[#1E90FF] file:text-white file:text-xs file:font-medium cursor-pointer"
+              />
+              {config.apnsCert && <span className="text-xs text-green-400">✓ Carregado ({config.apnsCert.length} bytes)</span>}
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm text-[#B0B0B0] font-medium">Chave Privada APNS (.pem)</label>
+              <input
+                type="file"
+                accept=".pem,.key"
+                onChange={(e) => handleFileUpload('apnsKey', e)}
+                className="flex-1 bg-[#1E1E1E] border border-gray-700 text-white rounded-lg px-3 py-2 text-sm file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:bg-[#1E90FF] file:text-white file:text-xs file:font-medium cursor-pointer"
+              />
+              {config.apnsKey && <span className="text-xs text-green-400">✓ Carregado ({config.apnsKey.length} bytes)</span>}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Input label="Team ID (Apple Developer)" placeholder="Ex: A1B2C3D4E5" value={config.teamId || ''} onChange={(e) => updateField('teamId', e.target.value)} />
+            <Input label="Key ID (APNS Auth Key)" placeholder="Ex: F6G7H8I9J0" value={config.keyId || ''} onChange={(e) => updateField('keyId', e.target.value)} />
+            <Input label="Bundle ID do App MDM" placeholder="Ex: com.suaempresa.mdm" value={config.bundleId || ''} onChange={(e) => updateField('bundleId', e.target.value)} />
+          </div>
+
+          <Button variant="secondary" onClick={handleTestAPNS} disabled={testing}>
+            <Server size={16} /> {testing ? 'Testando...' : 'Testar Conexão APNS'}
+          </Button>
+        </div>
+      </Card>
+
+      <Card className="border-t-4 border-t-[#1E90FF]">
+        <h3 className="text-lg font-semibold text-white mb-2 flex items-center gap-2">
+          <ShieldAlert className="text-[#1E90FF]" size={20} /> Certificado MDM
+        </h3>
+
+        <div className="space-y-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm text-[#B0B0B0] font-medium">Certificado MDM (.pem)</label>
+              <input
+                type="file"
+                accept=".pem,.p12,.cer"
+                onChange={(e) => handleFileUpload('mdmCert', e)}
+                className="flex-1 bg-[#1E1E1E] border border-gray-700 text-white rounded-lg px-3 py-2 text-sm file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:bg-[#1E90FF] file:text-white file:text-xs file:font-medium cursor-pointer"
+              />
+              {config.mdmCert && <span className="text-xs text-green-400">✓ Carregado</span>}
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm text-[#B0B0B0] font-medium">Chave Privada MDM (.pem)</label>
+              <input
+                type="file"
+                accept=".pem,.key"
+                onChange={(e) => handleFileUpload('mdmKey', e)}
+                className="flex-1 bg-[#1E1E1E] border border-gray-700 text-white rounded-lg px-3 py-2 text-sm file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:bg-[#1E90FF] file:text-white file:text-xs file:font-medium cursor-pointer"
+              />
+              {config.mdmKey && <span className="text-xs text-green-400">✓ Carregado</span>}
+            </div>
+          </div>
+
+          <Input label="Tópico MDM (Topic)" placeholder="Ex: com.apple.mgmt.External.xxxxx" value={config.mdmTopic || ''} onChange={(e) => updateField('mdmTopic', e.target.value)} />
+        </div>
+      </Card>
 
       <Card>
-        <h3 className="text-lg font-semibold text-white mb-5">Certificados Apple</h3>
-        <div className="space-y-4">
-          <div className="p-4 rounded-lg bg-[#1E1E1E] border border-gray-700">
-            <p className="text-white mb-2">Status: {config.isConfigured ? '✅ Configurado' : '⚠️ Aguardando certificados'}</p>
-            <p className="text-gray-400 text-sm">Team ID: {config.teamId || 'Não definido'}</p>
-            <p className="text-gray-400 text-sm">Key ID: {config.keyId || 'Não definido'}</p>
-            <p className="text-gray-400 text-sm">Bundle ID: {config.bundleId || 'Não definido'}</p>
+        <h3 className="text-lg font-semibold text-white mb-5 flex items-center gap-2">
+          <Settings className="text-[#1E90FF]" size={20} /> Perfil Corporativo
+        </h3>
+        <div className="space-y-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Input label="Nome da Organização" value={config.orgName || ''} onChange={(e) => updateField('orgName', e.target.value)} />
+            <Input label="Departamento" value={config.department || ''} onChange={(e) => updateField('department', e.target.value)} />
           </div>
-          <Button variant="secondary" onClick={handleTestAPNS}><Server size={16}/> Testar APNS</Button>
+          <Input label="E-mail de Suporte TI" placeholder="suporte@suaempresa.com" value={config.supportEmail || ''} onChange={(e) => updateField('supportEmail', e.target.value)} />
+          <Input label="Apple ID associado ao MDM" placeholder="admin@suaempresa.com" value={config.appleId || ''} onChange={(e) => updateField('appleId', e.target.value)} />
+
+          <div className="pt-6 border-t border-gray-700/50 flex justify-between items-center">
+            <span className="text-xs text-gray-500">
+              {isConfigured ? '✅ Sistema pronto.' : '⚠️ Carregue os certificados para ativar o modo real.'}
+            </span>
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? 'Salvando...' : 'Salvar Parâmetros'}
+            </Button>
+          </div>
         </div>
       </Card>
     </motion.div>
