@@ -31,6 +31,8 @@ import {
   testAPNS as apiTestAPNS,
 } from './services/api.js';
 
+import ProtocoloScreen from './components/ProtocoloScreen.jsx';
+
 const AppContext = createContext();
 
 const AppProvider = ({ children }) => {
@@ -989,6 +991,7 @@ const MainLayout = ({ activeTab, setActiveTab }) => {
     { id: 'devices', icon: Smartphone, label: 'Dispositivos' },
     { id: 'monitoring', icon: Activity, label: 'Telemetria' },
     { id: 'actions', icon: Fingerprint, label: 'Comandos' },
+    { id: 'protocol', icon: ShieldCheck, label: 'Protocolo Nexus' },
     { id: 'logs', icon: FileText, label: 'Logs' },
     { id: 'config', icon: Settings, label: 'Configurações' },
   ];
@@ -1068,6 +1071,7 @@ const MainLayout = ({ activeTab, setActiveTab }) => {
           {activeTab === 'devices' && <DevicesScreen />}
           {activeTab === 'monitoring' && <MonitoringScreen />}
           {activeTab === 'actions' && <ActionsScreen />}
+          {activeTab === 'protocol' && <ProtocoloScreen />}
           {activeTab === 'logs' && <LogsScreen />}
           {activeTab === 'config' && <ConfigScreen />}
         </div>
