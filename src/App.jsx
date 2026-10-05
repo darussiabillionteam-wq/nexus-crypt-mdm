@@ -144,6 +144,9 @@ const AppProvider = ({ children }) => {
 
 const useApp = () => useContext(AppContext);
 
+const API_URL = 'https://nexus-crypt-backend.onrender.com';
+const getToken = () => localStorage.getItem('token') || sessionStorage.getItem('token');
+
 const Card = ({ children, className = '' }) => (
   <div className={`bg-[#2A2A2A]/90 backdrop-blur-sm border border-gray-700/50 rounded-xl p-6 shadow-lg shadow-black/20 ${className}`}>
     {children}
@@ -178,25 +181,6 @@ const Input = ({ label, ...props }) => (
     />
   </div>
 );
-
-const Badge = ({ status }) => {
-  const styles = {
-    ACTIVE: 'bg-green-500/10 text-green-400 border border-green-500/30',
-    LOCKED: 'bg-orange-500/10 text-orange-400 border border-orange-500/30',
-    OFFLINE: 'bg-gray-500/10 text-gray-400 border border-gray-500/30',
-    WIPED: 'bg-red-500/10 text-red-400 border border-red-500/30',
-    PENDING: 'bg-blue-500/10 text-blue-400 border border-blue-500/30',
-  };
-  const labels = { ACTIVE: 'Ativo', LOCKED: 'Bloqueado', OFFLINE: 'Offline', WIPED: 'Formatado', PENDING: 'Pendente' };
-  const key = status?.toUpperCase() || 'OFFLINE';
-
-  return (
-    <span className={`px-2.5 py-1 rounded-full text-xs font-medium tracking-wide flex items-center gap-1.5 w-fit ${styles[key] || styles.OFFLINE}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${key === 'ACTIVE' ? 'bg-green-400 animate-pulse' : key === 'LOCKED' ? 'bg-orange-400' : key === 'WIPED' ? 'bg-red-400' : 'bg-gray-400'}`}></span>
-      {labels[key] || status}
-    </span>
-  );
-};
 
 const Modal = ({ isOpen, onClose, title, children }) => {
   if (!isOpen) return null;
@@ -391,12 +375,69 @@ const DashboardScreen = () => {
 };
 
 const DevicesScreen = () => {
-  const { devices, addDevice, removeDevice } = useApp();
+  const { devices, addDevice, removeDevice, loadDevices } = useApp();
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newDev, setNewDev] = useState({ name: '', model: '', imei: '', iosVersion: '' });
   const [consent, setConsent] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState('');
+  const [openMenuId, setOpenMenuId] = useState(null);
+  const [messageModal, setMessageModal] = useState({ open: false, device: null, message: '' });
+
+  const handleSync = async () => {
+    setSyncing(true);
+    try {
+      const token = getToken();
+      const res = await fetch(`${API_URL}/api/devices/sync-simplemdm`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erro ao sincronizar');
+      await loadDevices();
+      alert(`✅ Sincronizado! ${data.created} criados, ${data.updated} atualizados`);
+    } catch (err) {
+      alert('❌ ' + err.message);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleAction = async (device, action, extra = {}) => {
+    if (!device.simplemdmId) {
+      alert('⚠️ Este dispositivo não está vinculado ao SimpleMDM. Rode "Sincronizar SimpleMDM" primeiro.');
+      return;
+    }
+
+    const confirmMsg = {
+      lock: `Bloquear "${device.name}"?`,
+      wipe: `⚠️ APAGAR TUDO de "${device.name}"? Essa ação é IRREVERSÍVEL!`,
+      restart: `Reiniciar "${device.name}"?`,
+      locate: `Localizar "${device.name}"?`,
+    }[action];
+
+    if (confirmMsg && !window.confirm(confirmMsg)) return;
+
+    try {
+      const token = getToken();
+      const body = action === 'message' ? { message: extra.message } : {};
+      const res = await fetch(`${API_URL}/api/devices/${device.id}/${action}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erro');
+      alert(`✅ ${data.message || 'Comando enviado!'}`);
+      setOpenMenuId(null);
+      setMessageModal({ open: false, device: null, message: '' });
+      await loadDevices();
+    } catch (err) {
+      alert('❌ ' + err.message);
+    }
+  };
 
   const handleAdd = async (e) => {
     e.preventDefault();
@@ -416,8 +457,24 @@ const DevicesScreen = () => {
   };
 
   const handleDelete = async (id, name) => {
-    if (!window.confirm(`Deletar o dispositivo ${name}?`)) return;
+    if (!window.confirm(`Deletar "${name}" do painel? (Não apaga o device, só remove do Nexus)`)) return;
     await removeDevice(id);
+    setOpenMenuId(null);
+  };
+
+  // Fecha menu ao clicar fora
+  useEffect(() => {
+    const close = () => setOpenMenuId(null);
+    window.addEventListener('click', close);
+    return () => window.removeEventListener('click', close);
+  }, []);
+
+  const STATUS = {
+    ACTIVE: { color: '#00e676', label: 'Ativo' },
+    LOCKED: { color: '#ff9100', label: 'Bloqueado' },
+    WIPED: { color: '#ff1744', label: 'Formatado' },
+    OFFLINE: { color: '#6b7280', label: 'Offline' },
+    PENDING: { color: '#1E90FF', label: 'Pendente' },
   };
 
   return (
@@ -427,56 +484,146 @@ const DevicesScreen = () => {
           <h2 className="text-2xl font-bold text-white">Dispositivos Gerenciados</h2>
           <p className="text-[#B0B0B0] text-sm mt-1">Lista completa de aparelhos sob política MDM.</p>
         </div>
-        <Button onClick={() => setIsAddModalOpen(true)} className="shadow-[0_0_15px_rgba(30,144,255,0.3)]">
-          <Plus size={18} /> Cadastrar Aparelho
-        </Button>
+        <div className="flex gap-3 flex-wrap">
+          <Button variant="secondary" onClick={handleSync} disabled={syncing}>
+            <RotateCw size={18} className={syncing ? 'animate-spin' : ''} />
+            {syncing ? 'Sincronizando...' : 'Sincronizar SimpleMDM'}
+          </Button>
+          <Button onClick={() => setIsAddModalOpen(true)} className="shadow-[0_0_15px_rgba(30,144,255,0.3)]">
+            <Plus size={18} /> Cadastrar Aparelho
+          </Button>
+        </div>
       </div>
 
-      <Card className="p-0 overflow-hidden border-gray-700/60">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-[#1E1E1E] border-b border-gray-700 text-[#B0B0B0] text-sm uppercase tracking-wider">
-                <th className="px-6 py-4 font-medium">Identificação</th>
-                <th className="px-6 py-4 font-medium">Modelo / OS</th>
-                <th className="px-6 py-4 font-medium">IMEI</th>
-                <th className="px-6 py-4 font-medium">Status</th>
-                <th className="px-6 py-4 font-medium">Ações</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-700/50">
-              {devices.map(dev => (
-                <tr key={dev.id} className="hover:bg-gray-800/40 transition-colors">
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 bg-gray-800 rounded-lg">
-                        <Smartphone size={18} className="text-gray-400" />
-                      </div>
-                      <div>
-                        <p className="text-white font-medium">{dev.name}</p>
-                        <p className="text-xs text-gray-500">ID: {dev.id.substring(0, 12)}...</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <p className="text-gray-300">{dev.model}</p>
-                    <p className="text-xs text-gray-500">iOS {dev.iosVersion}</p>
-                  </td>
-                  <td className="px-6 py-4 text-gray-400 font-mono text-sm">{dev.imei}</td>
-                  <td className="px-6 py-4"><Badge status={dev.status} /></td>
-                  <td className="px-6 py-4">
-                    <button onClick={() => handleDelete(dev.id, dev.name)} className="text-red-400 hover:text-red-300 transition-colors">
-                      <Trash2 size={16} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {devices.length === 0 && <div className="p-8 text-center text-gray-500">Nenhum dispositivo cadastrado.</div>}
-        </div>
-      </Card>
+      {devices.length === 0 ? (
+        <Card className="p-12 text-center">
+          <Smartphone size={64} className="mx-auto text-gray-600 mb-4" />
+          <p className="text-gray-500 text-lg mb-2">Nenhum dispositivo cadastrado.</p>
+          <p className="text-gray-600 text-sm">Clique em "Sincronizar SimpleMDM" pra puxar do servidor.</p>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+          {devices.map((dev) => {
+            const st = STATUS[dev.status] || STATUS.OFFLINE;
+            const linked = !!dev.simplemdmId;
+            const menuOpen = openMenuId === dev.id;
 
+            return (
+              <motion.div
+                key={dev.id}
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="relative bg-[#2A2A2A] border border-gray-700/50 rounded-2xl p-5 hover:border-[#1E90FF]/40 transition-all"
+              >
+                {/* Bolinha status */}
+                <div className="absolute top-4 right-4 w-3 h-3 rounded-full" style={{ background: st.color }} />
+
+                {/* Imagem iPhone */}
+                <div className="flex justify-center mb-5">
+                  <div className="w-24 h-36 bg-gradient-to-b from-gray-700 to-gray-900 rounded-3xl border-2 border-gray-600 flex items-center justify-center relative shadow-lg shadow-black/40">
+                    <div className="absolute top-2 left-1/2 -translate-x-1/2 w-10 h-1.5 bg-black rounded-full"></div>
+                    <Smartphone size={36} className="text-gray-500" />
+                  </div>
+                </div>
+
+                <h3 className="text-white font-semibold text-base mb-1 truncate">{dev.name}</h3>
+                <p className="text-gray-400 text-xs mb-4 truncate">{dev.model}</p>
+
+                <div className="flex items-center gap-2 text-xs text-gray-400 mb-1.5">
+                  <span>👤</span>
+                  <span className="truncate">Cleber Alexandre</span>
+                </div>
+
+                <div className="flex items-center gap-2 text-xs text-gray-400 mb-3">
+                  <span>📦</span>
+                  <span>Default</span>
+                </div>
+
+                <p className="text-gray-600 text-[10px] font-mono mb-4 truncate">IMEI: {dev.imei}</p>
+
+                {!linked && (
+                  <p className="text-orange-400 text-[10px] mb-3 bg-orange-500/10 px-2 py-1 rounded border border-orange-500/30">
+                    ⚠️ Não vinculado ao SimpleMDM
+                  </p>
+                )}
+
+                {/* Rodapé */}
+                <div className="flex justify-between items-center pt-4 border-t border-gray-700/50 mt-auto relative">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full" style={{ background: st.color }} />
+                    <span className="text-xs font-semibold" style={{ color: st.color }}>{st.label}</span>
+                  </div>
+
+                  <div className="relative">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setOpenMenuId(menuOpen ? null : dev.id); }}
+                      disabled={!linked}
+                      className={`w-9 h-9 rounded-full flex items-center justify-center text-lg font-bold transition-all ${linked ? 'bg-gray-700 text-white hover:bg-[#1E90FF] cursor-pointer' : 'bg-gray-800 text-gray-600 cursor-not-allowed'}`}
+                      title={linked ? 'Ações' : 'Não vinculado'}
+                    >
+                      ⋯
+                    </button>
+
+                    {menuOpen && (
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        className="absolute bottom-12 right-0 bg-[#1E1E1E] border border-gray-700 rounded-xl shadow-2xl p-2 min-w-[220px] z-50"
+                      >
+                        <button onClick={() => handleAction(dev, 'lock')} className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-orange-500/10 text-orange-400 flex items-center gap-2">
+                          <Lock size={14} /> Bloquear
+                        </button>
+                        <button onClick={() => { setMessageModal({ open: true, device: dev, message: '' }); setOpenMenuId(null); }} className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-blue-500/10 text-blue-400 flex items-center gap-2">
+                          <MessageSquare size={14} /> Enviar Mensagem
+                        </button>
+                        <button onClick={() => handleAction(dev, 'locate')} className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-purple-500/10 text-purple-400 flex items-center gap-2">
+                          <MapPin size={14} /> Localizar
+                        </button>
+                        <button onClick={() => handleAction(dev, 'restart')} className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-green-500/10 text-green-400 flex items-center gap-2">
+                          <RotateCw size={14} /> Reiniciar
+                        </button>
+                        <button onClick={() => handleAction(dev, 'wipe')} className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-red-500/10 text-red-400 flex items-center gap-2 border-t border-gray-700 mt-1 pt-3">
+                          <Trash2 size={14} /> Apagar (Wipe)
+                        </button>
+                        <button onClick={() => handleDelete(dev.id, dev.name)} className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-red-500/10 text-red-400 flex items-center gap-2">
+                          <Trash2 size={14} /> Remover do Painel
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </motion.div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Modal Mensagem */}
+      <Modal
+        isOpen={messageModal.open}
+        onClose={() => setMessageModal({ open: false, device: null, message: '' })}
+        title="Enviar Mensagem"
+      >
+        <div className="space-y-4">
+          <p className="text-gray-400 text-sm">Mensagem para: <strong className="text-white">{messageModal.device?.name}</strong></p>
+          <Input
+            label="Mensagem"
+            placeholder="Digite a mensagem..."
+            value={messageModal.message}
+            onChange={(e) => setMessageModal({ ...messageModal, message: e.target.value })}
+          />
+          <div className="flex justify-end gap-3 pt-4 border-t border-gray-700">
+            <Button variant="secondary" onClick={() => setMessageModal({ open: false, device: null, message: '' })}>Cancelar</Button>
+            <Button
+              onClick={() => handleAction(messageModal.device, 'message', { message: messageModal.message })}
+              disabled={!messageModal.message}
+            >
+              Enviar
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal Cadastro */}
       <Modal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} title="Cadastro de Dispositivo">
         <form onSubmit={handleAdd} className="space-y-5">
           <Input label="Nome de Identificação" placeholder="Ex: iPhone 14 - Vendas" value={newDev.name} onChange={e => setNewDev({...newDev, name: e.target.value})} required />
@@ -485,7 +632,7 @@ const DevicesScreen = () => {
             <Input label="Versão iOS" placeholder="Ex: 17.4" value={newDev.iosVersion} onChange={e => setNewDev({...newDev, iosVersion: e.target.value})} required />
           </div>
           <Input label="IMEI" placeholder="15 dígitos" value={newDev.imei} onChange={e => setNewDev({...newDev, imei: e.target.value})} required />
-          
+
           <div className="p-4 bg-[#E63946]/5 border border-[#E63946]/30 rounded-lg">
             <label className="flex items-start gap-3 cursor-pointer">
               <input type="checkbox" className="w-5 h-5 accent-[#E63946] mt-0.5" checked={consent} onChange={e => setConsent(e.target.checked)} required />
@@ -536,7 +683,6 @@ const MonitoringScreen = () => {
                   <p className="text-xs text-gray-400 font-mono">{dev.imei}</p>
                 </div>
               </div>
-              <Badge status={dev.status} />
             </div>
 
             <div className="space-y-5">
