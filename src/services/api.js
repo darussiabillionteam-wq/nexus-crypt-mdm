@@ -5,22 +5,73 @@
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://nexus-crypt-backend.onrender.com/api';
 
-// ---------- Helpers ----------
+// ============================================================
+// HELPERS DE TOKEN
+// ============================================================
 
 function getToken() {
-  return localStorage.getItem('nexus_token');
+  return localStorage.getItem('nexus_token') || sessionStorage.getItem('nexus_token');
 }
 
 function setToken(token) {
-  localStorage.setItem('nexus_token', token);
+  if (localStorage.getItem('nexus_token') || !sessionStorage.getItem('nexus_token')) {
+    localStorage.setItem('nexus_token', token);
+  } else {
+    sessionStorage.setItem('nexus_token', token);
+  }
 }
 
 function clearToken() {
   localStorage.removeItem('nexus_token');
   localStorage.removeItem('nexus_user');
+  localStorage.removeItem('nexus_saved_user');
+  sessionStorage.removeItem('nexus_token');
+  sessionStorage.removeItem('nexus_user');
+  sessionStorage.removeItem('nexus_saved_user');
 }
 
-async function request(endpoint, options = {}) {
+function getSavedCredentials() {
+  const raw = localStorage.getItem('nexus_saved_user') || sessionStorage.getItem('nexus_saved_user');
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+// ============================================================
+// REQUEST COM AUTO-REFRESH DE TOKEN
+// ============================================================
+
+let isRefreshing = false;
+let refreshPromise = null;
+
+async function refreshToken() {
+  const creds = getSavedCredentials();
+  if (!creds || !creds.username || !creds.password) {
+    throw new Error('Sem credenciais salvas pra renovar');
+  }
+
+  const res = await fetch(`${API_URL}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: creds.username, password: creds.password }),
+  });
+
+  if (!res.ok) {
+    throw new Error('Falha ao renovar token');
+  }
+
+  const data = await res.json();
+  setToken(data.token);
+  if (data.user) {
+    localStorage.setItem('nexus_user', JSON.stringify(data.user));
+  }
+  return data.token;
+}
+
+async function request(endpoint, options = {}, isRetry = false) {
   const token = getToken();
   const headers = {
     'Content-Type': 'application/json',
@@ -35,6 +86,35 @@ async function request(endpoint, options = {}) {
     ...options,
     headers,
   });
+
+  // ✅ Auto-refresh: se o token expirou, tenta renovar UMA vez
+  if (response.status === 401 && !isRetry) {
+    if (isRefreshing && refreshPromise) {
+      // Espera o refresh que já tá em andamento
+      try {
+        await refreshPromise;
+        return request(endpoint, options, true);
+      } catch {
+        clearToken();
+        throw new Error('Sessão expirada. Faça login novamente.');
+      }
+    }
+
+    isRefreshing = true;
+    refreshPromise = refreshToken();
+
+    try {
+      await refreshPromise;
+      isRefreshing = false;
+      refreshPromise = null;
+      return request(endpoint, options, true);
+    } catch (err) {
+      isRefreshing = false;
+      refreshPromise = null;
+      clearToken();
+      throw new Error('Sessão expirada. Faça login novamente.');
+    }
+  }
 
   if (response.status === 401) {
     clearToken();
@@ -54,7 +134,7 @@ async function request(endpoint, options = {}) {
 // AUTENTICAÇÃO
 // ============================================================
 
-export async function login(username, password) {
+export async function login(username, password, saveCredentials = true) {
   const data = await request('/auth/login', {
     method: 'POST',
     body: JSON.stringify({ username, password }),
@@ -62,6 +142,12 @@ export async function login(username, password) {
 
   setToken(data.token);
   localStorage.setItem('nexus_user', JSON.stringify(data.user));
+
+  // ✅ Salva credenciais pra auto-refresh
+  if (saveCredentials) {
+    localStorage.setItem('nexus_saved_user', JSON.stringify({ username, password }));
+  }
+
   return data.user;
 }
 
@@ -70,7 +156,7 @@ export function logout() {
 }
 
 export function getCurrentUser() {
-  const user = localStorage.getItem('nexus_user');
+  const user = localStorage.getItem('nexus_user') || sessionStorage.getItem('nexus_user');
   return user ? JSON.parse(user) : null;
 }
 
@@ -97,30 +183,67 @@ export async function createDevice(deviceData) {
   });
 }
 
+export async function updateDevice(id, data) {
+  return request(`/devices/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
 export async function deleteDevice(id) {
   return request(`/devices/${id}`, {
     method: 'DELETE',
   });
 }
 
+export async function syncSimpleMDM() {
+  return request('/devices/sync-simplemdm', { method: 'POST' });
+}
+
 // ============================================================
-// AÇÕES REMOTAS (MDM)
+// AÇÕES REMOTAS (MDM — via SimpleMDM)
 // ============================================================
 
 export async function lockDevice(id) {
-  return request(`/mdm/devices/${id}/lock`, { method: 'POST' });
+  return request(`/devices/${id}/lock`, { method: 'POST' });
 }
 
 export async function wipeDevice(id) {
-  return request(`/mdm/devices/${id}/wipe`, { method: 'POST' });
+  return request(`/devices/${id}/wipe`, { method: 'POST' });
 }
 
 export async function locateDevice(id) {
-  return request(`/mdm/devices/${id}/locate`, { method: 'POST' });
+  return request(`/devices/${id}/locate`, { method: 'POST' });
 }
 
 export async function restartDevice(id) {
-  return request(`/mdm/devices/${id}/restart`, { method: 'POST' });
+  return request(`/devices/${id}/restart`, { method: 'POST' });
+}
+
+export async function sendMessage(id, message) {
+  return request(`/devices/${id}/message`, {
+    method: 'POST',
+    body: JSON.stringify({ message }),
+  });
+}
+
+// ============================================================
+// ENROLLMENT (SimpleMDM)
+// ============================================================
+
+export async function getDefaultEnrollment() {
+  return request('/enrollment/default');
+}
+
+export async function listEnrollments() {
+  return request('/enrollment/list');
+}
+
+export async function createEnrollment(name) {
+  return request('/enrollment/create', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  });
 }
 
 // ============================================================
