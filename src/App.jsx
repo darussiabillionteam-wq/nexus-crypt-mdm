@@ -145,7 +145,7 @@ const AppProvider = ({ children }) => {
 const useApp = () => useContext(AppContext);
 
 const API_URL = 'https://nexus-crypt-backend.onrender.com';
-const getToken = () => localStorage.getItem('token') || sessionStorage.getItem('token');
+const getToken = () => localStorage.getItem('nexus_token') || sessionStorage.getItem('nexus_token');
 
 const Card = ({ children, className = '' }) => (
   <div className={`bg-[#2A2A2A]/90 backdrop-blur-sm border border-gray-700/50 rounded-xl p-6 shadow-lg shadow-black/20 ${className}`}>
@@ -462,7 +462,6 @@ const DevicesScreen = () => {
     setOpenMenuId(null);
   };
 
-  // Fecha menu ao clicar fora
   useEffect(() => {
     const close = () => setOpenMenuId(null);
     window.addEventListener('click', close);
@@ -515,10 +514,8 @@ const DevicesScreen = () => {
                 animate={{ opacity: 1, scale: 1 }}
                 className="relative bg-[#2A2A2A] border border-gray-700/50 rounded-2xl p-5 hover:border-[#1E90FF]/40 transition-all"
               >
-                {/* Bolinha status */}
                 <div className="absolute top-4 right-4 w-3 h-3 rounded-full" style={{ background: st.color }} />
 
-                {/* Imagem iPhone */}
                 <div className="flex justify-center mb-5">
                   <div className="w-24 h-36 bg-gradient-to-b from-gray-700 to-gray-900 rounded-3xl border-2 border-gray-600 flex items-center justify-center relative shadow-lg shadow-black/40">
                     <div className="absolute top-2 left-1/2 -translate-x-1/2 w-10 h-1.5 bg-black rounded-full"></div>
@@ -547,7 +544,6 @@ const DevicesScreen = () => {
                   </p>
                 )}
 
-                {/* Rodapé */}
                 <div className="flex justify-between items-center pt-4 border-t border-gray-700/50 mt-auto relative">
                   <div className="flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full" style={{ background: st.color }} />
@@ -597,7 +593,6 @@ const DevicesScreen = () => {
         </div>
       )}
 
-      {/* Modal Mensagem */}
       <Modal
         isOpen={messageModal.open}
         onClose={() => setMessageModal({ open: false, device: null, message: '' })}
@@ -623,7 +618,6 @@ const DevicesScreen = () => {
         </div>
       </Modal>
 
-      {/* Modal Cadastro */}
       <Modal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} title="Cadastro de Dispositivo">
         <form onSubmit={handleAdd} className="space-y-5">
           <Input label="Nome de Identificação" placeholder="Ex: iPhone 14 - Vendas" value={newDev.name} onChange={e => setNewDev({...newDev, name: e.target.value})} required />
