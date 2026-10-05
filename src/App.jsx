@@ -407,7 +407,7 @@ const DevicesScreen = () => {
 
   const handleAction = async (device, action, extra = {}) => {
     if (!device.simplemdmId) {
-      alert('⚠️ Este dispositivo não está vinculado ao SimpleMDM. Rode "Sincronizar SimpleMDM" primeiro.');
+      alert('⚠️ Este dispositivo não está vinculado ao SimpleMDM.');
       return;
     }
 
@@ -553,9 +553,8 @@ const DevicesScreen = () => {
                   <div className="relative">
                     <button
                       onClick={(e) => { e.stopPropagation(); setOpenMenuId(menuOpen ? null : dev.id); }}
-                      disabled={!linked}
-                      className={`w-9 h-9 rounded-full flex items-center justify-center text-lg font-bold transition-all ${linked ? 'bg-gray-700 text-white hover:bg-[#1E90FF] cursor-pointer' : 'bg-gray-800 text-gray-600 cursor-not-allowed'}`}
-                      title={linked ? 'Ações' : 'Não vinculado'}
+                      className="w-9 h-9 rounded-full flex items-center justify-center text-lg font-bold transition-all bg-gray-700 text-white hover:bg-[#1E90FF] cursor-pointer"
+                      title="Ações"
                     >
                       ⋯
                     </button>
@@ -565,22 +564,30 @@ const DevicesScreen = () => {
                         onClick={(e) => e.stopPropagation()}
                         className="absolute bottom-12 right-0 bg-[#1E1E1E] border border-gray-700 rounded-xl shadow-2xl p-2 min-w-[220px] z-50"
                       >
-                        <button onClick={() => handleAction(dev, 'lock')} className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-orange-500/10 text-orange-400 flex items-center gap-2">
-                          <Lock size={14} /> Bloquear
-                        </button>
-                        <button onClick={() => { setMessageModal({ open: true, device: dev, message: '' }); setOpenMenuId(null); }} className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-blue-500/10 text-blue-400 flex items-center gap-2">
-                          <MessageSquare size={14} /> Enviar Mensagem
-                        </button>
-                        <button onClick={() => handleAction(dev, 'locate')} className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-purple-500/10 text-purple-400 flex items-center gap-2">
-                          <MapPin size={14} /> Localizar
-                        </button>
-                        <button onClick={() => handleAction(dev, 'restart')} className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-green-500/10 text-green-400 flex items-center gap-2">
-                          <RotateCw size={14} /> Reiniciar
-                        </button>
-                        <button onClick={() => handleAction(dev, 'wipe')} className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-red-500/10 text-red-400 flex items-center gap-2 border-t border-gray-700 mt-1 pt-3">
-                          <Trash2 size={14} /> Apagar (Wipe)
-                        </button>
-                        <button onClick={() => handleDelete(dev.id, dev.name)} className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-red-500/10 text-red-400 flex items-center gap-2">
+                        {linked ? (
+                          <>
+                            <button onClick={() => handleAction(dev, 'lock')} className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-orange-500/10 text-orange-400 flex items-center gap-2">
+                              <Lock size={14} /> Bloquear
+                            </button>
+                            <button onClick={() => { setMessageModal({ open: true, device: dev, message: '' }); setOpenMenuId(null); }} className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-blue-500/10 text-blue-400 flex items-center gap-2">
+                              <MessageSquare size={14} /> Enviar Mensagem
+                            </button>
+                            <button onClick={() => handleAction(dev, 'locate')} className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-purple-500/10 text-purple-400 flex items-center gap-2">
+                              <MapPin size={14} /> Localizar
+                            </button>
+                            <button onClick={() => handleAction(dev, 'restart')} className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-green-500/10 text-green-400 flex items-center gap-2">
+                              <RotateCw size={14} /> Reiniciar
+                            </button>
+                            <button onClick={() => handleAction(dev, 'wipe')} className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-red-500/10 text-red-400 flex items-center gap-2 border-t border-gray-700 mt-1 pt-3">
+                              <Trash2 size={14} /> Apagar (Wipe)
+                            </button>
+                          </>
+                        ) : (
+                          <p className="text-[10px] text-orange-400 px-3 py-2 bg-orange-500/10 rounded-lg mb-1">
+                            ⚠️ Sem comandos MDM (não vinculado)
+                          </p>
+                        )}
+                        <button onClick={() => handleDelete(dev.id, dev.name)} className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-red-500/10 text-red-400 flex items-center gap-2 border-t border-gray-700 mt-1 pt-3">
                           <Trash2 size={14} /> Remover do Painel
                         </button>
                       </div>
